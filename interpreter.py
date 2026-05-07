@@ -187,8 +187,6 @@ def interpret(forecast: Forecast, signals: List[Signal]) -> Optional[str]:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=CONFIG.LLM_TEMPERATURE,
-            max_tokens=CONFIG.LLM_MAX_TOKENS,
         )
 
         text = response.choices[0].message.content

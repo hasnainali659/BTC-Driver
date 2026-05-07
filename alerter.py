@@ -3,7 +3,7 @@ Telegram alerter for forecast updates.
 """
 import logging
 import requests
-from typing import List
+from typing import List, Optional
 
 from signals import Forecast, Direction
 from config import CONFIG
@@ -11,7 +11,8 @@ from config import CONFIG
 logger = logging.getLogger(__name__)
 
 
-def format_forecast_message(forecast: Forecast) -> str:
+def format_forecast_message(forecast: Forecast,
+                            interpretation: Optional[str] = None) -> str:
     arrow = {
         Direction.BULLISH: '🟢↑',
         Direction.BEARISH: '🔴↓',
@@ -45,6 +46,20 @@ def format_forecast_message(forecast: Forecast) -> str:
             lines.append(
                 f"  • `{c['name']}`: {c['contribution']:+.2f}"
             )
+
+    # Append LLM interpretation if available
+    if interpretation:
+        lines.append("")
+        lines.append("---")
+        lines.append("*Analyst view:*")
+        # Telegram has a 4096 char limit; trim if combined message gets too big
+        current_len = sum(len(l) + 1 for l in lines)
+        budget = max(500, 3800 - current_len)
+        snippet = interpretation
+        if len(snippet) > budget:
+            snippet = snippet[:budget].rsplit(' ', 1)[0] + '... [truncated]'
+        lines.append(snippet)
+
     return "\n".join(lines)
 
 

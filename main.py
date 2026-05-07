@@ -10,6 +10,13 @@ Usage:
     python main.py --loop --interval 1800  # every 30 minutes
     python main.py --quiet               # no Telegram alert this run
 """
+# Optional: load .env file if python-dotenv is available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # .env loading is optional
+
 import argparse
 import logging
 import time
@@ -26,6 +33,7 @@ from collectors import (
 from engine import forecast as engine
 import storage.db as db
 import alerter
+import interpreter
 
 
 logging.basicConfig(level=logging.INFO,
@@ -82,18 +90,25 @@ def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
     # 3) Synthesize forecast
     forecast = engine.synthesize(signals, btc_price)
 
-    # 4) Print
+    # 4) Print structured forecast
     print_forecast(forecast, signals)
 
-    # 5) Persist
+    # 5) LLM interpretation (best-effort; never blocks on failure)
+    interpretation = interpreter.interpret(forecast, signals)
+    if interpretation:
+        interpreter.print_interpretation(interpretation)
+
+    # 6) Persist
     if not dry_run:
-        forecast_id = db.save_forecast(forecast, signals)
+        forecast_id = db.save_forecast(forecast, signals,
+                                       interpretation=interpretation)
         logger.info(f"Saved forecast id={forecast_id}")
         db.export_latest_forecast_to_json("latest_forecast.json")
 
-    # 6) Alert
+    # 7) Alert
     if not quiet and not dry_run and CONFIG.TELEGRAM_BOT_TOKEN:
-        msg = alerter.format_forecast_message(forecast)
+        msg = alerter.format_forecast_message(forecast,
+                                              interpretation=interpretation)
         alerter.send(msg)
 
     duration = (datetime.utcnow() - cycle_start).total_seconds()
@@ -101,6 +116,7 @@ def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
     return {
         'forecast': forecast,
         'signals': signals,
+        'interpretation': interpretation,
         'duration_s': duration,
     }
 

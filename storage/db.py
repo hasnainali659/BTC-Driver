@@ -79,12 +79,18 @@ def init_db():
                 summary TEXT,
                 key_drivers_json TEXT,
                 contradictions_json TEXT,
+                interpretation TEXT,
                 -- For accuracy backtesting (filled later by backtester)
                 actual_btc_price_at_horizon REAL,
                 actual_change_pct REAL,
                 forecast_correct INTEGER
             )
         """)
+        # Migration: add interpretation column if it doesn't exist
+        cursor = conn.execute("PRAGMA table_info(forecasts)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+        if 'interpretation' not in existing_cols:
+            conn.execute("ALTER TABLE forecasts ADD COLUMN interpretation TEXT")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_forecasts_time ON forecasts(timestamp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_time ON signals(timestamp)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_name ON signals(name, timestamp)")
@@ -93,7 +99,8 @@ def init_db():
         conn.close()
 
 
-def save_forecast(forecast: Forecast, signals: List[Signal]) -> int:
+def save_forecast(forecast: Forecast, signals: List[Signal],
+                  interpretation: Optional[str] = None) -> int:
     """Persist forecast and its signals. Returns forecast id."""
     init_db()
     conn = _connect()
@@ -102,8 +109,8 @@ def save_forecast(forecast: Forecast, signals: List[Signal]) -> int:
             INSERT INTO forecasts (
                 timestamp, horizon_hours, direction, composite, confidence,
                 agreement_pct, signal_count, btc_price, summary,
-                key_drivers_json, contradictions_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                key_drivers_json, contradictions_json, interpretation
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             forecast.timestamp.isoformat(),
             forecast.horizon_hours,
@@ -116,6 +123,7 @@ def save_forecast(forecast: Forecast, signals: List[Signal]) -> int:
             forecast.summary,
             _dumps(forecast.key_drivers),
             _dumps(forecast.contradictions),
+            interpretation,
         ))
         forecast_id = cursor.lastrowid
 

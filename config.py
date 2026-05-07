@@ -33,11 +33,29 @@ class Config:
         default_factory=lambda: os.getenv("TELEGRAM_CHAT_ID")
     )
 
+    # ============ LLM INTERPRETATION ============
+    # OpenAI-compatible API for human-readable forecast interpretation.
+    # Works with OpenAI, Azure OpenAI, OpenRouter, Anthropic-compatible
+    # endpoints, local Ollama, etc — just change OPENAI_BASE_URL.
+    OPENAI_API_KEY: Optional[str] = field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY")
+    )
+    OPENAI_MODEL: str = field(
+        default_factory=lambda: os.getenv("OPENAI_MODEL", "gpt-5-mini")
+    )
+    OPENAI_BASE_URL: Optional[str] = field(
+        default_factory=lambda: os.getenv("OPENAI_BASE_URL")
+    )
+    LLM_INTERPRETATION_ENABLED: bool = True
+    LLM_TIMEOUT_SECONDS: int = 30
+    LLM_TEMPERATURE: float = 0.3   # low temp for analytical writing
+    LLM_MAX_TOKENS: int = 800
+
     # ============ COLLECTOR TOGGLES ============
     # Which collectors to run. False = skip.
     ENABLE_PRICE: bool = True
     ENABLE_DERIVATIVES: bool = True
-    ENABLE_ONCHAIN: bool = False
+    ENABLE_ONCHAIN: bool = True
     ENABLE_SENTIMENT: bool = True
     ENABLE_NEWS: bool = True
     ENABLE_MACRO: bool = True

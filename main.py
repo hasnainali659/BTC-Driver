@@ -73,6 +73,19 @@ def run_collectors_parallel(max_workers: int = 6) -> List[Signal]:
     return all_signals
 
 
+def run_collector_sequential() -> List[Signal]:
+    """Run all collectors one by one."""
+    all_signals = []
+    for name, fn in COLLECTORS.items():
+        try:
+            sigs = fn()
+            all_signals.extend(sigs)
+            logger.info(f"  [{name}] {len(sigs)} signals")
+        except Exception as e:
+            logger.error(f"  [{name}] failed: {e}", exc_info=True)
+    return all_signals
+
+
 def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
     """One full forecast cycle: collect → synthesize → persist → alert."""
     cycle_start = datetime.utcnow()
@@ -81,7 +94,7 @@ def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
 
     # 1) Run all collectors
     logger.info("Running collectors...")
-    signals = run_collectors_parallel()
+    signals = run_collector_sequential()
     logger.info(f"Collected {len(signals)} signals")
 
     # 2) Get current BTC price for the forecast object

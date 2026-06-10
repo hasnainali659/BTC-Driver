@@ -121,6 +121,54 @@ def taker_buy_ratio(klines: pd.DataFrame, bars: int) -> Optional[float]:
     return float(recent['tbbav'].sum()) / total_vol
 
 
+# ============================================================
+# SCORE FUNCTIONS (module-level so backfill.py can replay them
+# on historical data with identical logic)
+# ============================================================
+def rsi_score(r: float) -> float:
+    """RSI scoring: extreme values = mean-reversion bias.
+    Neutral 40-60 = no signal. Trending 30-70 = momentum bias."""
+    if r > 80: return -0.7   # overbought, mean reversion likely
+    if r > 70: return -0.3   # extended
+    if r > 55: return 0.4    # bullish momentum
+    if r > 45: return 0.0    # neutral
+    if r > 30: return -0.4   # bearish momentum
+    if r > 20: return 0.3    # oversold bounce likely
+    return 0.7               # extreme oversold, reversal likely
+
+
+def macd_score(hist: float, hist_prev: float) -> float:
+    """Histogram: + and rising = bullish, - and falling = bearish."""
+    if hist > 0 and hist > hist_prev:
+        return 0.5
+    if hist > 0:
+        return 0.2
+    if hist < 0 and hist < hist_prev:
+        return -0.5
+    return -0.2
+
+
+def dist_high_score(dist_high_pct: float) -> float:
+    """<2% from a 30d high = breakout potential; far below = exhaustion."""
+    if dist_high_pct > -2:
+        return 0.4
+    if dist_high_pct > -5:
+        return 0.0
+    if dist_high_pct > -10:
+        return -0.3
+    return -0.5
+
+
+def taker_delta_score(ratio: float) -> float:
+    """Typical range ~0.47-0.53. Map ±0.035 imbalance → ±0.7, clamped."""
+    return max(-0.7, min(0.7, (ratio - 0.5) * 20))
+
+
+TREND_SCORES = {'up': 0.6, 'down': -0.6, 'sideways': 0.0}
+MA50_SCORES = (0.4, -0.4)    # (above, below)
+MA200_SCORES = (0.6, -0.6)
+
+
 def trend_classification(klines: pd.DataFrame) -> str:
     """Classify trend on a timeframe via short MA slope + position."""
     if len(klines) < 50:
@@ -165,7 +213,7 @@ def collect() -> List[Signal]:
         if kl.empty:
             continue
         trend = trend_classification(kl)
-        score = {'up': 0.6, 'down': -0.6, 'sideways': 0.0}[trend]
+        score = TREND_SCORES[trend]
         signals.append(Signal(
             source='binance', category='technical',
             name=f'trend_{tf}',
@@ -177,17 +225,6 @@ def collect() -> List[Signal]:
     # ---- MOMENTUM: RSI ----
     rsi_4h = rsi(kl_4h['close'], 14) if not kl_4h.empty else 50
     rsi_1d = rsi(kl_1d['close'], 14) if not kl_1d.empty else 50
-
-    # RSI scoring: extreme values = mean-reversion bias.
-    # Neutral 40-60 = no signal. Trending 30-70 = momentum bias.
-    def rsi_score(r: float) -> float:
-        if r > 80: return -0.7   # overbought, mean reversion likely
-        if r > 70: return -0.3   # extended
-        if r > 55: return 0.4    # bullish momentum
-        if r > 45: return 0.0    # neutral
-        if r > 30: return -0.4   # bearish momentum
-        if r > 20: return 0.3    # oversold bounce likely
-        return 0.7               # extreme oversold, reversal likely
 
     signals.append(Signal(
         source='binance', category='technical', name='rsi_4h',
@@ -203,19 +240,11 @@ def collect() -> List[Signal]:
     # ---- MOMENTUM: MACD ----
     if not kl_4h.empty:
         m = macd_state(kl_4h['close'])
-        # Histogram: + and rising = bullish, - and falling = bearish
-        if m['hist'] > 0 and m['hist'] > m['hist_prev']:
-            macd_score = 0.5
-        elif m['hist'] > 0:
-            macd_score = 0.2
-        elif m['hist'] < 0 and m['hist'] < m['hist_prev']:
-            macd_score = -0.5
-        else:
-            macd_score = -0.2
         signals.append(Signal(
             source='binance', category='technical', name='macd_4h',
             raw_value={'hist': round(m['hist'], 2)},
-            score=macd_score, confidence=Confidence.MEDIUM,
+            score=macd_score(m['hist'], m['hist_prev']),
+            confidence=Confidence.MEDIUM,
             timestamp=now, meta=m,
         ))
 
@@ -238,8 +267,8 @@ def collect() -> List[Signal]:
         ma_50 = float(kl_1d['close'].tail(50).mean())
         ma_200 = float(kl_1d['close'].tail(200).mean())
         # Above key MAs = structurally bullish
-        ma50_score = 0.4 if price > ma_50 else -0.4
-        ma200_score = 0.6 if price > ma_200 else -0.6
+        ma50_score = MA50_SCORES[0] if price > ma_50 else MA50_SCORES[1]
+        ma200_score = MA200_SCORES[0] if price > ma_200 else MA200_SCORES[1]
         signals.append(Signal(
             source='binance', category='technical', name='above_50d_ma',
             raw_value=price > ma_50, score=ma50_score,
@@ -261,16 +290,7 @@ def collect() -> List[Signal]:
         dist_high_pct = (price - recent_high) / recent_high * 100
         dist_low_pct = (price - recent_low) / recent_low * 100
 
-        # If we're <2% from a 30d high, breakout potential
-        # If >5% off, exhaustion signal
-        if dist_high_pct > -2:
-            high_score = 0.4
-        elif dist_high_pct > -5:
-            high_score = 0.0
-        elif dist_high_pct > -10:
-            high_score = -0.3
-        else:
-            high_score = -0.5
+        high_score = dist_high_score(dist_high_pct)
 
         signals.append(Signal(
             source='binance', category='technical', name='dist_30d_high_pct',
@@ -289,8 +309,7 @@ def collect() -> List[Signal]:
         ratio = taker_buy_ratio(kl_1h, bars)
         if ratio is None:
             continue
-        # Typical range ~0.47-0.53. Map ±0.035 imbalance → ±0.7, clamped.
-        flow_score = max(-0.7, min(0.7, (ratio - 0.5) * 20))
+        flow_score = taker_delta_score(ratio)
         signals.append(Signal(
             source='binance', category='technical', name=sig_name,
             raw_value=round(ratio, 4), score=round(flow_score, 3),

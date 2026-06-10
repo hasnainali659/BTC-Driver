@@ -75,6 +75,23 @@ def _direction_score(values: list, bull_when_falling: bool = True,
     return -raw if bull_when_falling else raw
 
 
+# Module-level so backfill.py can replay identical logic on history.
+def dxy_5d_score(dxy_change_pct: float) -> float:
+    """Falling DXY is bullish for BTC. 2% move = full score."""
+    return -min(max(dxy_change_pct / 2, -1), 1)
+
+
+def spx_5d_score(spx_change_pct: float) -> float:
+    """Rising SPX = risk-on = mildly bullish BTC. 4% move = full score,
+    halved for weak correlation."""
+    return min(max(spx_change_pct / 4, -1), 1) * 0.5
+
+
+def gold_5d_score(gold_change_pct: float) -> float:
+    """Gold-BTC correlation is regime-dependent. Net: mild positive."""
+    return min(max(gold_change_pct / 5, -1), 1) * 0.3
+
+
 def collect() -> List[Signal]:
     if not CONFIG.ENABLE_MACRO:
         return []
@@ -141,8 +158,7 @@ def collect() -> List[Signal]:
     if not CONFIG.FRED_API_KEY:
         dxy_change = yahoo_recent_change('DX-Y.NYB', 5)
         if dxy_change is not None:
-            # Falling DXY is bullish for BTC
-            score = -min(max(dxy_change / 2, -1), 1)  # 2% move = full score
+            score = dxy_5d_score(dxy_change)
             signals.append(Signal(
                 source='yahoo', category='macro', name='dxy_5d_change_pct',
                 raw_value=round(dxy_change, 2),
@@ -152,26 +168,22 @@ def collect() -> List[Signal]:
     # SPX (risk-on proxy) — always pull from Yahoo
     spx_change = yahoo_recent_change('^GSPC', 5)
     if spx_change is not None:
-        # Rising SPX = risk-on = mildly bullish BTC (correlation regime dependent)
-        score = min(max(spx_change / 4, -1), 1)  # 4% move = full score
         signals.append(Signal(
             source='yahoo', category='macro', name='spx_5d_change_pct',
             raw_value=round(spx_change, 2),
-            score=score * 0.5,  # weak correlation, halve influence
+            score=spx_5d_score(spx_change),
             confidence=Confidence.LOW, timestamp=now,
         ))
 
     # Gold — alternative SoV, can be either correlation
     gold_change = yahoo_recent_change('GC=F', 5)
     if gold_change is not None:
-        # Currently gold-BTC correlation is regime-dependent.
-        # Rising gold often signals dollar weakness which is bullish BTC,
-        # but also reflects risk-off which can be bearish BTC. Net: mild positive.
-        score = min(max(gold_change / 5, -1), 1) * 0.3
         signals.append(Signal(
             source='yahoo', category='macro', name='gold_5d_change_pct',
             raw_value=round(gold_change, 2),
-            score=score, confidence=Confidence.LOW, timestamp=now,
+            score=gold_5d_score(gold_change),
+            confidence=Confidence.LOW, timestamp=now,
         ))
 
     return signals
+

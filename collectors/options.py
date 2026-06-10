@@ -107,6 +107,23 @@ def _skew_score(skew_pts: float) -> float:
     return 0.0
 
 
+def dvol_score(dvol_value: float) -> float:
+    """
+    DVOL > 80 = panic (often near a low)
+    DVOL < 40 = complacency (caution near tops)
+    50-65 = normal
+    """
+    if dvol_value > 80:
+        return 0.4   # panic vol = often local bottom
+    if dvol_value > 70:
+        return 0.2
+    if dvol_value < 35:
+        return -0.3  # complacency
+    if dvol_value < 45:
+        return -0.1
+    return 0.0
+
+
 def collect() -> List[Signal]:
     if not CONFIG.ENABLE_OPTIONS:
         return []
@@ -145,25 +162,11 @@ def collect() -> List[Signal]:
             # Each entry: [timestamp, open, high, low, close]
             latest = candles[-1]
             dvol_value = float(latest[4])
-
-            # DVOL > 80 = panic (often near a low)
-            # DVOL < 40 = complacency (caution near tops)
-            # 50-65 = normal
-            if dvol_value > 80:
-                score = 0.4   # panic vol = often local bottom
-            elif dvol_value > 70:
-                score = 0.2
-            elif dvol_value < 35:
-                score = -0.3  # complacency
-            elif dvol_value < 45:
-                score = -0.1
-            else:
-                score = 0.0
-
             signals.append(Signal(
                 source='deribit', category='options', name='dvol',
                 raw_value=round(dvol_value, 2),
-                score=score, confidence=Confidence.MEDIUM, timestamp=now,
+                score=dvol_score(dvol_value),
+                confidence=Confidence.MEDIUM, timestamp=now,
             ))
 
     return signals

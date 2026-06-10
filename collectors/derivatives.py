@@ -65,6 +65,19 @@ def _oi_change_score(oi_change_pct: float, price_change_pct: float) -> float:
     return 0.0
 
 
+def basis_score(basis_pct: float) -> float:
+    """Futures premium >0.1% = bullish positioning; discount = bearish."""
+    if basis_pct > 0.15:
+        return 0.3
+    if basis_pct > 0.05:
+        return 0.1
+    if basis_pct < -0.15:
+        return -0.3
+    if basis_pct < -0.05:
+        return -0.1
+    return 0.0
+
+
 def _liq_score(long_liq: float, short_liq: float) -> float:
     """
     Heavy long liquidations = bearish flush, often capitulation bottom signal
@@ -171,18 +184,7 @@ def collect() -> List[Signal]:
         spot_p = float(spot['price'])
         fut_p = float(fut_price['price'])
         basis_pct = (fut_p - spot_p) / spot_p * 100
-        # Premium >0.1% = bullish positioning
-        # Discount = bearish positioning
-        if basis_pct > 0.15:
-            score = 0.3
-        elif basis_pct > 0.05:
-            score = 0.1
-        elif basis_pct < -0.15:
-            score = -0.3
-        elif basis_pct < -0.05:
-            score = -0.1
-        else:
-            score = 0.0
+        score = basis_score(basis_pct)
         signals.append(Signal(
             source='binance', category='derivatives', name='basis_pct',
             raw_value=round(basis_pct, 4), score=score,

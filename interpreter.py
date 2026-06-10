@@ -214,10 +214,11 @@ def print_interpretation(text: str):
     """Render the LLM interpretation with a divider."""
     if not text:
         return
+    from term import paint, CYAN
     print()
-    print("=" * 90)
-    print("ANALYST INTERPRETATION  (LLM-generated)")
-    print("=" * 90)
+    print(paint("=" * 90, CYAN))
+    print(paint("ANALYST INTERPRETATION  (LLM-generated)", CYAN, bold=True))
+    print(paint("=" * 90, CYAN))
     # Render verbatim — the LLM already formatted it with markdown-style headers
     print(text)
     print("=" * 90)

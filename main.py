@@ -34,6 +34,8 @@ from engine import forecast as engine
 import storage.db as db
 import alerter
 import interpreter
+from term import paint, score_color, direction_color, confidence_color, \
+    GREEN, RED, YELLOW, CYAN, DIM, BOLD
 
 
 logging.basicConfig(level=logging.INFO,
@@ -118,6 +120,14 @@ def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
         logger.info(f"Saved forecast id={forecast_id}")
         db.export_latest_forecast_to_json("latest_forecast.json")
 
+        # 6b) Resolve outcomes for matured past forecasts (incremental,
+        # cheap — one kline fetch only when unresolved rows exist)
+        try:
+            from forecast_accuracy import resolve_outcomes
+            resolve_outcomes(quiet=True)
+        except Exception as e:
+            logger.warning(f"Outcome resolution skipped: {e}")
+
     # 7) Alert
     if not quiet and not dry_run and CONFIG.TELEGRAM_BOT_TOKEN:
         msg = alerter.format_forecast_message(forecast,
@@ -135,52 +145,71 @@ def run_forecast_cycle(quiet: bool = False, dry_run: bool = False) -> dict:
 
 
 def print_forecast(forecast, signals):
-    """Pretty-print the forecast and contributing signals."""
+    """Pretty-print the forecast and contributing signals (colored)."""
+    H = "=" * 90
     print()
-    print("=" * 90)
-    print(f"BTC FORECAST — {forecast.timestamp.strftime('%Y-%m-%d %H:%M UTC')}")
-    print("=" * 90)
-    print(f"BTC Price:      ${forecast.btc_price:,.2f}")
-    print(f"Direction:      {forecast.direction.value.upper()} "
-          f"({forecast.horizon_hours}h horizon)")
-    print(f"Composite:      {forecast.composite:+.3f}  (range -1 to +1)")
-    print(f"Confidence:     {forecast.confidence.value}")
+    print(paint(H, CYAN))
+    print(paint(f"BTC FORECAST — "
+                f"{forecast.timestamp.strftime('%Y-%m-%d %H:%M UTC')}",
+                CYAN, bold=True))
+    print(paint(H, CYAN))
+    print(f"BTC Price:      {paint(f'${forecast.btc_price:,.2f}', BOLD)}")
+    dir_txt = paint(forecast.direction.value.upper(),
+                    direction_color(forecast.direction.value), bold=True)
+    print(f"Direction:      {dir_txt} ({forecast.horizon_hours}h horizon)")
+    comp_txt = paint(f"{forecast.composite:+.3f}",
+                     score_color(forecast.composite), bold=True)
+    print(f"Composite:      {comp_txt}  (range -1 to +1)")
+    conf_txt = paint(forecast.confidence.value,
+                     confidence_color(forecast.confidence.value), bold=True)
+    print(f"Confidence:     {conf_txt}")
     print(f"Agreement:      {forecast.agreement_pct:.0f}% of signals aligned")
     print(f"Signal count:   {forecast.signal_count}")
-    print("-" * 90)
+    print(paint("-" * 90, DIM))
 
     if forecast.key_drivers:
-        print("KEY DRIVERS:")
+        print(paint("KEY DRIVERS:", BOLD))
         for d in forecast.key_drivers[:6]:
-            print(f"  {d['contribution']:+.3f}  "
+            contrib = paint(f"{d['contribution']:+.3f}",
+                            score_color(d['contribution']))
+            print(f"  {contrib}  "
                   f"[{d['category']:<11}] {d['name']:<28}  "
                   f"value={d['value'][:40]}")
 
     if forecast.contradictions:
-        print("\nCONTRADICTIONS:")
+        print(paint("\nCONTRADICTIONS:", BOLD))
         for c in forecast.contradictions[:3]:
-            print(f"  {c['contribution']:+.3f}  "
+            contrib = paint(f"{c['contribution']:+.3f}",
+                            score_color(c['contribution']))
+            print(f"  {contrib}  "
                   f"[{c['category']:<11}] {c['name']:<28}  "
                   f"value={c['value'][:40]}")
 
-    print("-" * 90)
+    print(paint("-" * 90, DIM))
 
     # Group signals by category for visibility
     by_cat = {}
     for s in signals:
         by_cat.setdefault(s.category, []).append(s)
-    print("ALL SIGNALS BY CATEGORY:")
+    print(paint("ALL SIGNALS BY CATEGORY:", BOLD))
     for cat in sorted(by_cat.keys()):
         sigs = by_cat[cat]
-        print(f"  [{cat}] ({len(sigs)} signals)")
+        print(f"  {paint(f'[{cat}]', CYAN)} ({len(sigs)} signals)")
         for s in sigs:
-            arrow = ('↑' if s.score > 0.05
-                     else '↓' if s.score < -0.05 else '·')
+            if s.score > 0.05:
+                arrow = paint('↑', GREEN, bold=True)
+            elif s.score < -0.05:
+                arrow = paint('↓', RED, bold=True)
+            else:
+                arrow = paint('·', DIM)
             value_str = str(s.raw_value)[:35]
-            print(f"    {arrow} {s.name:<30} score={s.score:+.2f}  "
-                  f"conf={s.confidence.value:<6}  val={value_str}")
+            score_txt = paint(f"{s.score:+.2f}", score_color(s.score))
+            conf_txt = paint(f"{s.confidence.value:<6}",
+                             confidence_color(s.confidence.value))
+            print(f"    {arrow} {s.name:<30} score={score_txt}  "
+                  f"conf={conf_txt}  val={value_str}")
 
-    print("=" * 90)
+    print(paint(H, CYAN))
     print()
 
 

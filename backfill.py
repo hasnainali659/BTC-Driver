@@ -285,13 +285,15 @@ def replay_rule_engine(feat: pd.DataFrame) -> pd.DataFrame:
 # SUMMARY / BENCHMARK
 # ============================================================
 def print_summary(feat: pd.DataFrame, threshold: float):
+    from term import paint, pct_color, CYAN, GREEN, YELLOW, RED, DIM, BOLD
     n = len(feat)
     matured = feat.dropna(subset=['fwd_ret_4h_pct'])
     print()
-    print("=" * 78)
-    print(f"FEATURE MATRIX: {n} rows "
-          f"({feat.index.min()} -> {feat.index.max()}, 4h grid)")
-    print("=" * 78)
+    print(paint("=" * 78, CYAN))
+    print(paint(f"FEATURE MATRIX: {n} rows "
+                f"({feat.index.min()} -> {feat.index.max()}, 4h grid)",
+                CYAN, bold=True))
+    print(paint("=" * 78, CYAN))
 
     lab = matured['label_4h']
     print(f"Label distribution (threshold +/-{threshold}%):  "
@@ -314,19 +316,26 @@ def print_summary(feat: pd.DataFrame, threshold: float):
         persist_hit = np.where(persist > 0, d['fwd_ret_4h_pct'] > 0,
                                np.where(persist < 0,
                                         d['fwd_ret_4h_pct'] < 0, False))
-        print(f"  Rule directional accuracy:   {hit.mean() * 100:.1f}%")
+        acc = hit.mean() * 100
+        edge = (hit.mean() - max(always_up_acc, persist_hit.mean())) * 100
+        edge_col = GREEN if edge > 1 else (YELLOW if edge > -1 else RED)
+        print(f"  Rule directional accuracy:   "
+              f"{paint(f'{acc:.1f}%', pct_color(acc, 56, 50), bold=True)}")
         print(f"  Baseline (best constant):    {always_up_acc * 100:.1f}%")
         print(f"  Baseline (persistence):      {persist_hit.mean() * 100:.1f}%")
-        print(f"  Edge vs best baseline:       "
-              f"{(hit.mean() - max(always_up_acc, persist_hit.mean())) * 100:+.1f} pts")
+        print(f"  {paint(f'EDGE vs best baseline:       {edge:+.1f} pts', edge_col, bold=True)}")
 
-    ic = matured['rule_composite'].corr(matured['fwd_ret_4h_pct'],
-                                        method='spearman')
+    # Spearman via ranks (avoids the scipy dependency)
+    ic = matured['rule_composite'].rank().corr(
+        matured['fwd_ret_4h_pct'].rank())
+    ic_col = GREEN if ic > 0.03 else (YELLOW if ic > 0 else RED)
     print(f"\nInformation coefficient (spearman composite vs fwd 4h ret): "
-          f"{ic:+.4f}")
-    print("  (>+0.03 is meaningful for a 4h horizon; ~0 means the composite")
-    print("   has no predictive ordering and weights need retraining)")
-    print("=" * 78)
+          f"{paint(f'{ic:+.4f}', ic_col, bold=True)}")
+    print(paint("  (>+0.03 is meaningful for a 4h horizon; ~0 means the "
+                "composite", DIM))
+    print(paint("   has no predictive ordering and weights need retraining)",
+                DIM))
+    print(paint("=" * 78, CYAN))
 
 
 # ============================================================

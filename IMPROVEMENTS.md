@@ -117,7 +117,7 @@ The interpreter is presentation-only — good, keep it that way. An LLM adds zer
 |------|------|-----------|
 | 1 | ✅ **DONE** — #7 quick wins + #10 bug fixes + #6 dilution fix (+ funding 8h-unit fix, IV skew signal) | Days of work, immediate signal-quality gain |
 | 2 | ✅ **DONE** — #1 historical backfill + feature matrix (`backfill.py` + `features.py`; includes rule-engine replay with baselines + IC) | Unblocks everything data-driven |
-| 3 | #8 honest evaluator + baselines | You can't improve what you can't measure |
+| 3 | ✅ **DONE** — #8 honest evaluator + baselines (rewritten `forecast_accuracy.py`: incremental resolution, baselines, precision/recall, tier monotonicity, IC, pseudo-Brier; colored terminal output via `term.py`) | You can't improve what you can't measure |
 | 4 | #3 regime conditioning + #4 factor buckets | Biggest rule-engine accuracy lift |
 | 5 | #2 horizon-matched features + #9 new signals | Feeds the model real short-horizon edge |
 | 6 | #1 model training + calibrated probabilities | Replace hand weights; ship P(up) |

@@ -24,21 +24,24 @@ logger = logging.getLogger(__name__)
 
 def _funding_score(funding_rate: float) -> float:
     """
-    Funding rate scoring (Binance hourly funding).
+    Funding rate scoring. NOTE: Binance funding is per 8 HOURS (not hourly);
+    the baseline/neutral rate is +0.0001 (+0.01% per 8h). Thresholds are
+    centered on that baseline.
+
     Negative funding = shorts paying longs = squeeze fuel = bullish
     Very positive funding = crowded longs = mean-reversion bearish
     """
-    if funding_rate < -0.0003:    # heavy negative
+    if funding_rate < -0.0003:    # heavy negative (3x baseline inverted)
         return 0.7
-    if funding_rate < -0.0001:    # mild negative
+    if funding_rate < -0.00005:   # below zero = shorts paying
         return 0.4
-    if funding_rate > 0.0010:     # extreme positive
+    if funding_rate > 0.0010:     # extreme positive (10x baseline)
         return -0.7
-    if funding_rate > 0.0005:     # very positive
+    if funding_rate > 0.0005:     # very positive (5x baseline)
         return -0.4
-    if funding_rate > 0.0002:     # mildly positive
+    if funding_rate > 0.0003:     # elevated above baseline
         return -0.1
-    return 0.0
+    return 0.0                    # around baseline 0.0001 = neutral
 
 
 def _oi_change_score(oi_change_pct: float, price_change_pct: float) -> float:

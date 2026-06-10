@@ -40,13 +40,24 @@ BEARISH_KEYWORDS = {
 }
 
 
+def _kw_match(kw: str, text: str) -> bool:
+    """
+    Whole-word/phrase match with boundaries.
+
+    Plain substring matching produced false positives:
+    'ath' in 'death'/'marathon', 'ban' in 'bank', 'rug' in 'struggle',
+    'short' in 'shortly', 'green' in 'evergreen'.
+    """
+    return re.search(r'\b' + re.escape(kw) + r'\b', text) is not None
+
+
 def _score_headline(text: str) -> float:
     """Simple keyword-based sentiment. Returns -1 to +1."""
     if not text:
         return 0.0
     lower = text.lower()
-    bull = sum(1 for kw in BULLISH_KEYWORDS if kw in lower)
-    bear = sum(1 for kw in BEARISH_KEYWORDS if kw in lower)
+    bull = sum(1 for kw in BULLISH_KEYWORDS if _kw_match(kw, lower))
+    bear = sum(1 for kw in BEARISH_KEYWORDS if _kw_match(kw, lower))
     if bull == 0 and bear == 0:
         return 0.0
     return (bull - bear) / max(bull + bear, 1)

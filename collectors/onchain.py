@@ -91,19 +91,27 @@ def collect() -> List[Signal]:
             meta=fees,
         ))
 
-    # ---- HASHRATE (Blockchain.info) ----
-    hashrate = http_get(f"{CONFIG.BLOCKCHAIN_INFO}/q/hashrate")
-    if hashrate is not None:
+    # ---- HASHRATE TREND (mempool.space) ----
+    # blockchain.info /q/hashrate is dead (returns 404). mempool.space
+    # gives a 1-month history, so we can score the *trend* (miner
+    # capitulation vs expansion) instead of logging a meaningless level.
+    hr = http_get(f"{CONFIG.MEMPOOL_SPACE}/v1/mining/hashrate/1m", timeout=5)
+    if hr and isinstance(hr, dict) and hr.get('hashrates'):
         try:
-            current_hashrate = float(hashrate)
-            signals.append(Signal(
-                source='blockchain.info', category='onchain',
-                name='hashrate_ths', raw_value=current_hashrate,
-                score=0.0,
-                confidence=Confidence.LOW, timestamp=now,
-            ))
-        except (ValueError, TypeError):
-            pass
+            series = [float(p['avgHashrate']) for p in hr['hashrates']
+                      if p.get('avgHashrate')]
+            if len(series) >= 2 and series[0] > 0:
+                change_pct = (series[-1] - series[0]) / series[0] * 100
+                signals.append(Signal(
+                    source='mempool.space', category='onchain',
+                    name='hashrate_30d_change_pct',
+                    raw_value=round(change_pct, 2),
+                    score=_hashrate_change_score(change_pct),
+                    confidence=Confidence.LOW, timestamp=now,
+                    meta={'current_hashrate': hr.get('currentHashrate')},
+                ))
+        except (KeyError, ValueError, TypeError) as e:
+            logger.warning(f"Hashrate parse error: {e}")
 
     # ---- DIFFICULTY ----
     diff = http_get(f"{CONFIG.BLOCKCHAIN_INFO}/q/getdifficulty")

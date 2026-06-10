@@ -35,7 +35,8 @@ def get_klines(interval: str = "1h", limit: int = 500) -> pd.DataFrame:
     cols = ['time', 'open', 'high', 'low', 'close', 'volume', 'close_time',
             'qvol', 'trades', 'tbbav', 'tbqav', 'ignore']
     df = pd.DataFrame(data, columns=cols)
-    for c in ['open', 'high', 'low', 'close', 'volume', 'qvol']:
+    for c in ['open', 'high', 'low', 'close', 'volume', 'qvol',
+              'tbbav', 'tbqav']:
         df[c] = pd.to_numeric(df[c], errors='coerce')
     df['time'] = pd.to_datetime(df['time'], unit='ms')
     return df
@@ -100,6 +101,24 @@ def bb_squeeze(series: pd.Series, period: int = 20) -> float:
     if len(width.dropna()) < 100:
         return 1.0
     return float(width.iloc[-1] / width.iloc[-100:].mean())
+
+
+def taker_buy_ratio(klines: pd.DataFrame, bars: int) -> Optional[float]:
+    """
+    Fraction of volume that was aggressive (taker) buying over the last
+    `bars` candles. 0.50 = balanced; >0.52 = strong net buying pressure.
+
+    Uses Binance's taker-buy base volume (tbbav), which was previously
+    downloaded and discarded. This is a CVD proxy — one of the strongest
+    free short-horizon order-flow signals.
+    """
+    if klines.empty or len(klines) < bars:
+        return None
+    recent = klines.tail(bars)
+    total_vol = float(recent['volume'].sum())
+    if total_vol <= 0 or recent['tbbav'].isna().any():
+        return None
+    return float(recent['tbbav'].sum()) / total_vol
 
 
 def trend_classification(klines: pd.DataFrame) -> str:
@@ -259,6 +278,24 @@ def collect() -> List[Signal]:
             confidence=Confidence.MEDIUM, timestamp=now,
             meta={'30d_high': recent_high, '30d_low': recent_low,
                   'dist_low_pct': round(dist_low_pct, 2)},
+        ))
+
+    # ---- ORDER FLOW: taker buy/sell delta (CVD proxy) ----
+    # Short window = immediate aggression; long window = sustained flow.
+    for sig_name, bars, conf in [
+        ('taker_delta_4h', 4, Confidence.MEDIUM),
+        ('taker_delta_24h', 24, Confidence.HIGH),
+    ]:
+        ratio = taker_buy_ratio(kl_1h, bars)
+        if ratio is None:
+            continue
+        # Typical range ~0.47-0.53. Map ±0.035 imbalance → ±0.7, clamped.
+        flow_score = max(-0.7, min(0.7, (ratio - 0.5) * 20))
+        signals.append(Signal(
+            source='binance', category='technical', name=sig_name,
+            raw_value=round(ratio, 4), score=round(flow_score, 3),
+            confidence=conf, timestamp=now,
+            meta={'window_bars_1h': bars},
         ))
 
     # ---- VOLATILITY: ATR ----

@@ -31,6 +31,8 @@ SIGNAL_WEIGHTS = {
     'dist_30d_high_pct': CONFIG.W_TECHNICAL_LEVELS,
     'bb_squeeze_4h': 0.0,        # info-only
     'atr_1h_pct': 0.0,            # info-only
+    'taker_delta_4h': CONFIG.W_TECHNICAL_FLOW * 0.7,
+    'taker_delta_24h': CONFIG.W_TECHNICAL_FLOW,
 
     # Derivatives
     'funding_rate': CONFIG.W_DERIVATIVES_FUNDING,
@@ -41,6 +43,7 @@ SIGNAL_WEIGHTS = {
 
     # Options
     'dvol': CONFIG.W_OPTIONS_SKEW,
+    'iv_skew_proxy': CONFIG.W_OPTIONS_SKEW,
 
     # Dominance
     'btc_dominance_pct': CONFIG.W_DOMINANCE,
@@ -49,7 +52,7 @@ SIGNAL_WEIGHTS = {
     # Onchain
     'mempool_count': 0.0,
     'fee_fastest_satvb': 0.0,
-    'hashrate_ths': 0.0,
+    'hashrate_30d_change_pct': CONFIG.W_ONCHAIN_NETWORK,
     'difficulty': 0.0,
     'exchange_flow_data': CONFIG.W_ONCHAIN_FLOWS,
 
@@ -142,8 +145,15 @@ def synthesize(signals: List[Signal], btc_price: float) -> Forecast:
             summary="No weighted signals — all weights zero.",
         )
 
+    # Only signals that actually vote (|score| > 0.05) enter the denominator.
+    # A zero-score signal means "no information right now", not "actively
+    # neutral" — including its weight in the denominator diluted the
+    # composite toward 0 and forced NEUTRAL calls regardless of the
+    # voting signals' conviction.
+    voting_weighted = [w for w in weighted if abs(w['signal'].score) > 0.05]
     total_contribution = sum(w['contribution'] for w in weighted)
-    total_weight = sum(abs(w['weight'] * w['confidence_mult']) for w in weighted)
+    total_weight = sum(abs(w['weight'] * w['confidence_mult'])
+                       for w in voting_weighted)
     composite = total_contribution / total_weight if total_weight > 0 else 0
 
     # Direction
@@ -159,7 +169,7 @@ def synthesize(signals: List[Signal], btc_price: float) -> Forecast:
         direction = Direction.NEUTRAL
 
     # Agreement: % of voting signals that pointed in the same direction as composite
-    voting = [w for w in weighted if abs(w['signal'].score) > 0.05]
+    voting = voting_weighted
     if voting:
         if direction == Direction.BULLISH:
             agreeing = sum(1 for w in voting if w['signal'].score > 0)

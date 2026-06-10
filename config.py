@@ -76,6 +76,7 @@ class Config:
     W_TECHNICAL_TREND: float = 2.0
     W_TECHNICAL_MOMENTUM: float = 1.5
     W_TECHNICAL_LEVELS: float = 1.0
+    W_TECHNICAL_FLOW: float = 1.5      # taker buy/sell delta (CVD proxy)
     W_DERIVATIVES_FUNDING: float = 1.5
     W_DERIVATIVES_OI: float = 1.0
     W_DERIVATIVES_LIQUIDATIONS: float = 1.0
